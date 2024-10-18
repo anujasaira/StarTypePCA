@@ -1,0 +1,630 @@
+---
+title: "StatLearn"
+author: "Anuja Saira Abraham"
+date: "2024-03-12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+y <- read.table('/Users/anujaabraaham/Downloads/stars.csv',sep = ',', header=TRUE)
+head(y)
+y$Star.type = y$Star.type +1
+y$Star.type = as.factor(y$Star.type)
+```
+
+```{r}
+summary(y)
+```
+```{r}
+
+numerical_data <- y[,1:4]
+target = y[,5]
+
+```
+```{r}
+data_normalized <- scale(numerical_data)
+cols_to_scale <- c("Temperature..K.", "Luminosity..L.Lo.","Radius..R.Ro.","Absolute.magnitude..Mv.")
+data <- cbind(y[setdiff(names(y), cols_to_scale)], data_normalized)
+```
+
+```{r}
+library(ggplot2)
+library(ggcorrplot)
+corr_matrix <- cor(data_normalized)
+ggcorrplot(corr_matrix)
+```
+```{r}
+data.pca <- princomp(corr_matrix)
+summary(data.pca)
+```
+
+```{r}
+
+PCA.result = prcomp(data_normalized)
+
+lambdas = PCA.result$sdev^2
+lambdas/sum(lambdas)
+
+
+perc.variability = lambdas/sum(lambdas)
+
+layout(cbind(1,2))
+# Plot for percentage variability with points and lines
+plot(perc.variability, ylim=c(0,1), type="b", pch=19, col="black", xlab="Principal Components", ylab="Percentage Variability")
+# Plot for cumulative percentage variability with points and lines
+plot(cumsum(perc.variability), ylim=c(0,1), type="b", pch=19, col="black", xlab="Principal Components", ylab="Cumulative Percentage Variability")
+
+```
+
+
+
+```{r}
+library(factoextra)
+
+# Graph of the variables
+fviz_pca_var(data.pca, col.var = "black")
+```
+
+
+
+```{r}
+data.pca$loadings[, 1:3]
+```
+
+
+```{r}
+# selecting train and test sets
+data_qty <- data[,c(1,5:8)]
+
+
+
+n = dim(data_qty)[1]
+set.seed(1)
+
+select.test = sample(1:n,n*(30/100))
+select.train = (1:n)[-select.test]
+train = as.data.frame(data_qty[-select.test,])
+test = as.data.frame(data_qty[select.test,])
+
+
+
+
+# Perform PCA on the covariates
+pca_model <- prcomp(data_qty[, 2:5], scale. = TRUE)
+pca_resy = PCA.result$x[,1:2]
+
+
+PCA_data = cbind(pca_resy,Star.type=data_qty$Star.type)
+train_pca = as.data.frame(PCA_data[-select.test,])
+test_pca = as.data.frame(PCA_data[select.test,])
+
+
+
+```
+
+
+
+RANDOM FOREST ON OG DATA
+```{r}
+library(ISLR)
+library(randomForest)
+
+# Bagging and Random forest ----------------------------------------------------------
+set.seed(1)
+
+
+# Train the random forest model using the optimal value of mtry
+rf_model <- randomForest(Star.type ~ ., data = train, mtry = 2, ntree = 200)
+
+# Make predictions on the test data using the trained random forest model
+predictions_rf <- predict(rf_model, newdata = test)
+
+# Create a confusion matrix
+confusion_matrix <- table(predictions_rf, test$Star.type)
+
+# Print the confusion matrix
+print(confusion_matrix)
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy:", accuracy, "\n")
+
+
+```
+```{r}
+# Generate confusion matrix
+confusion_matrix <- table(predictions_rf, test$Star.type)
+
+# Convert the confusion matrix to a data frame
+conf_matrix_df <- as.data.frame(confusion_matrix)
+colnames(conf_matrix_df) <- c("Predicted", "Actual", "Frequency")
+# Create a heatmap for the confusion matrix
+ggplot(data = conf_matrix_df, aes(x = Predicted, y = Actual, fill = Frequency)) +
+  geom_tile(color = "white") +  # Adds white borders for tiles
+  scale_fill_gradient(low = "darksalmon", high = "darkorange4") +  # Color gradient
+  geom_text(aes(label = Frequency), color = "grey1", size = 4) +  # Add text labels
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank()) +  # Remove minor grid lines
+  labs(title = "Confusion Matrix", x = "Predicted Class", y = "Actual Class", fill = "Frequency")  # Labels
+
+```
+
+```{r}
+# Load required package
+library(caret)
+# Assuming predictions_rf and test$Star.type are your predicted and actual values
+confusion_matrix <- confusionMatrix(predictions_rf, test$Star.type)
+print(confusion_matrix)
+
+
+
+
+```
+
+RANDOM FOREST ON PCA DATA
+
+```{r}
+library(randomForest)
+library(caret)
+
+# Bagging and Random forest ----------------------------------------------------------
+set.seed(1)
+
+
+# Train the random forest model using the optimal value of mtry
+rf_model <- randomForest(Star.type ~ ., data = train_pca, mtry = 2, ntree = 200)
+# Combine principal components with the target variable
+
+
+# Make predictions on the test data using the trained random forest model
+predictions_rf <- round(predict(rf_model, newdata = test_pca))
+length(test_pca$Star.type)
+# Create a confusion matrix
+confusion_matrix <- table(predictions_rf, test_pca$Star.type)
+
+# Print the confusion matrix
+print(confusion_matrix)
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy:", accuracy, "\n")
+
+
+
+```
+```{r}
+# Generate confusion matrix
+confusion_matrix <- table((predictions_rf), test$Star.type)
+
+# Convert the confusion matrix to a data frame
+conf_matrix_df <- as.data.frame(confusion_matrix)
+colnames(conf_matrix_df) <- c("Predicted", "Actual", "Frequency")
+# Create a heatmap for the confusion matrix
+ggplot(data = conf_matrix_df, aes(x = Predicted, y = Actual, fill = Frequency)) +
+  geom_tile(color = "white") +  # Adds white borders for tiles
+  scale_fill_gradient(low = "darksalmon", high = "darkorange4") +  # Color gradient
+  geom_text(aes(label = Frequency), color = "grey1", size = 4) +  # Add text labels
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank()) +  # Remove minor grid lines
+  labs(title = "Confusion Matrix", x = "Predicted Class", y = "Actual Class", fill = "Frequency")  # Labels
+
+```
+
+```{r}
+# Load required package
+library(caret)
+
+predictions_rf = as.factor(predictions_rf)
+test_pca$Star.type = as.factor(test_pca$Star.type)
+# Assuming predictions_rf and test$Star.type are your predicted and actual values
+confusion_matrix <- confusionMatrix(predictions_rf, test_pca$Star.type)
+levels(predictions_rf)
+length(test_pca$Star.type)
+print(confusion_matrix)
+
+```
+TREE ON OG DATA
+```{r}
+library(tree)
+train_df <- as.data.frame(train)
+test_df = as.data.frame(test)
+
+tree.star = tree(Star.type~., data=train_df)
+tree.star
+
+# Make predictions on the training data
+predictions <- round(predict(tree.star, newdata = test_df))
+
+
+
+predicted_values <- apply(predictions, 1, function(x) {
+  index <- as.numeric(names(x)[which.max(x)])
+  c(index)
+})
+# Convert to a named vector
+names(predicted_values) <- rownames(predictions)
+# Create a confusion matrix
+confusion_matrix <- table(predicted_values, test_df$Star.type)
+
+# Print the confusion matrix
+print(confusion_matrix)
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy:", accuracy, "\n")
+
+```
+
+```{r}
+
+```
+
+```{r}
+# Generate confusion matrix
+confusion_matrix <- table(predicted_values, test$Star.type)
+
+# Convert the confusion matrix to a data frame
+conf_matrix_df <- as.data.frame(confusion_matrix)
+colnames(conf_matrix_df) <- c("Predicted", "Actual", "Frequency")
+# Create a heatmap for the confusion matrix
+ggplot(data = conf_matrix_df, aes(x = Predicted, y = Actual, fill = Frequency)) +
+  geom_tile(color = "white") +  # Adds white borders for tiles
+  scale_fill_gradient(low = "darksalmon", high = "darkorange4") +  # Color gradient
+  geom_text(aes(label = Frequency), color = "grey1", size = 4) +  # Add text labels
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank()) +  # Remove minor grid lines
+  labs(title = "Confusion Matrix", x = "Predicted Class", y = "Actual Class", fill = "Frequency")  # Labels
+
+```
+```{r}
+# Load required package
+library(caret)
+# Assuming predictions_rf and test$Star.type are your predicted and actual values
+predicted_values = as.factor(predicted_values)
+test$Star.type= as.factor(test$Star.type)
+confusion_matrix <- confusionMatrix(predicted_values, test$Star.type)
+print(confusion_matrix)
+
+
+```
+
+TREE ON PCA DATA
+
+```{r}
+
+tree.star = tree(Star.type~., data=train_pca)
+tree.star
+
+# Make predictions on the training data
+predictions <- round(predict(tree.star, newdata = test_pca))
+# Create a confusion matrix
+confusion_matrix <- table(predictions, test_pca$Star.type)
+
+# Print the confusion matrix
+print(confusion_matrix)
+
+
+```
+
+
+```{r}
+# Generate confusion matrix
+confusion_matrix <- table(predictions, test_pca$Star.type)
+
+# Convert the confusion matrix to a data frame
+conf_matrix_df <- as.data.frame(confusion_matrix)
+colnames(conf_matrix_df) <- c("Predicted", "Actual", "Frequency")
+# Create a heatmap for the confusion matrix
+ggplot(data = conf_matrix_df, aes(x = Predicted, y = Actual, fill = Frequency)) +
+  geom_tile(color = "white") +  # Adds white borders for tiles
+  scale_fill_gradient(low = "darksalmon", high = "darkorange4") +  # Color gradient
+  geom_text(aes(label = Frequency), color = "grey1", size = 4) +  # Add text labels
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank()) +  # Remove minor grid lines
+  labs(title = "Confusion Matrix", x = "Predicted Class", y = "Actual Class", fill = "Frequency")  # Labels
+
+```
+
+```{r}
+# Load required package
+library(caret)
+
+# Assuming predictions_rf and test_pca$Star.type are your predicted and actual values
+predictions_rf <- as.factor(predictions)
+test_pca$Star.type <- as.factor(test_pca$Star.type)
+
+# Ensure levels are consistent
+all_levels <- union(levels(predictions_rf), levels(test_pca$Star.type))
+predictions_rf <- factor(predictions_rf, levels = all_levels)
+test_pca$Star.type <- factor(test_pca$Star.type, levels = all_levels)
+
+# Create confusion matrix
+confusion_matrix <- confusionMatrix(predictions_rf, test_pca$Star.type)
+
+# Print the confusion matrix
+print(confusion_matrix)
+
+```
+
+
+
+KNN ON OG DATA
+
+```{r}
+
+library(class)
+library(ggplot2)
+
+# Data
+train_data <- train[, 2:5]
+train_labels <- train[, 1]
+test_data <- test[, 2:5]
+# Check for missing values in train and test data
+if (anyNA(train_data) || anyNA(test_data)) {
+  # Impute missing values with the mean of each feature
+  train_data[is.na(train_data)] <- colMeans(train_data, na.rm = TRUE)
+  test_data[is.na(test_data)] <- colMeans(test_data, na.rm = TRUE)
+}
+# Remove rows with missing values
+complete_cases_train <- complete.cases(train_data)
+complete_cases_test <- complete.cases(test_data)
+
+train_data_clean <- train_data[complete_cases_train, ]
+train_labels_clean <- train_labels[complete_cases_train]
+
+test_data_clean <- test_data[complete_cases_test, ]
+
+# Initialize variables to store errors
+cv_errors <- numeric(30)
+
+# Perform cross-validation for each value of k
+for (k in 1:30) {
+  cv_error <- 0
+  # Perform 10-fold cross-validation
+  for (i in 1:4) {
+    # Split the data into training and validation sets
+    folds <- cut(1:nrow(train_data_clean), breaks = 10, labels = FALSE)
+    validation_index <- which(folds == i)
+    train_index <- which(folds != i)
+    # Train the KNN model
+    knn_model <- knn(train_data_clean[train_index, ], test_data_clean[validation_index, ], cl = train_labels_clean[train_index], k = k)
+    # Predict on the validation set
+    predictions <- as.factor(knn_model)
+    # Calculate the misclassification error
+    cv_error <- cv_error + sum(predictions != train_labels_clean[validation_index]) / length(validation_index)
+  }
+  # Average the error across folds
+  cv_errors[k] <- cv_error/4
+}
+
+# Plot the graph
+ggplot(data = data.frame(k = 1:30, cv_error = cv_errors), aes(x = k, y = cv_error)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Cross-validation Error vs. K",
+       x = "K",
+       y = "Cross-validation Error")
+
+
+```
+
+
+```{r}
+
+  
+  prediction.KNN = class::knn(train[,2:5],test[,2:5],cl=train[,1],k=17) 
+  library(caret)
+
+confusionMatrix(data=prediction.KNN,test$Star.type)
+
+```
+```{r}
+# Generate confusion matrix
+confusion_matrix <- table(prediction.KNN, test$Star.type)
+
+# Convert the confusion matrix to a data frame
+conf_matrix_df <- as.data.frame(confusion_matrix)
+colnames(conf_matrix_df) <- c("Predicted", "Actual", "Frequency")
+# Create a heatmap for the confusion matrix
+ggplot(data = conf_matrix_df, aes(x = Predicted, y = Actual, fill = Frequency)) +
+  geom_tile(color = "white") +  # Adds white borders for tiles
+  scale_fill_gradient(low = "darksalmon", high = "darkorange4") +  # Color gradient
+  geom_text(aes(label = Frequency), color = "grey1", size = 4) +  # Add text labels
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank()) +  # Remove minor grid lines
+  labs(title = "Confusion Matrix", x = "Predicted Class", y = "Actual Class", fill = "Frequency")  # Labels
+```
+```{r}
+library(caret)
+
+predictions_rf = as.factor(prediction.KNN)
+test_pca$Star.type = as.factor(test_pca$Star.type)
+# Assuming predictions_rf and test$Star.type are your predicted and actual values
+confusion_matrix <- confusionMatrix(predictions_rf, test_pca$Star.type)
+levels(predictions_rf)
+length(test_pca$Star.type)
+print(confusion_matrix)
+
+```
+
+KNN ON PCA DATA
+
+```{r}
+
+# Data
+train_data <- train_pca[, 1:2]
+train_labels <- train_pca[, 3]
+test_data <- test_pca[, 1:2]
+# Check for missing values in train and test data
+if (anyNA(train_data) || anyNA(test_data)) {
+  # Impute missing values with the mean of each feature
+  train_data[is.na(train_data)] <- colMeans(train_data, na.rm = TRUE)
+  test_data[is.na(test_data)] <- colMeans(test_data, na.rm = TRUE)
+}
+# Remove rows with missing values
+complete_cases_train <- complete.cases(train_data)
+complete_cases_test <- complete.cases(test_data)
+
+train_data_clean <- train_data[complete_cases_train, ]
+train_labels_clean <- train_labels[complete_cases_train]
+
+test_data_clean <- test_data[complete_cases_test, ]
+
+# Initialize variables to store errors
+cv_errors <- numeric(30)
+
+# Perform cross-validation for each value of k
+for (k in 1:30) {
+  cv_error <- 0
+  # Perform 10-fold cross-validation
+  for (i in 1:4) {
+    # Split the data into training and validation sets
+    folds <- cut(1:nrow(train_data_clean), breaks = 10, labels = FALSE)
+    validation_index <- which(folds == i)
+    train_index <- which(folds != i)
+    # Train the KNN model
+    knn_model <- knn(train_data_clean[train_index, ], test_data_clean[validation_index, ], cl = train_labels_clean[train_index], k = k)
+    # Predict on the validation set
+    predictions <- as.factor(knn_model)
+    # Calculate the misclassification error
+    cv_error <- cv_error + sum(predictions != train_labels_clean[validation_index]) / length(validation_index)
+  }
+  # Average the error across folds
+  cv_errors[k] <- cv_error/4
+}
+
+# Plot the graph
+ggplot(data = data.frame(k = 1:30, cv_error = cv_errors), aes(x = k, y = cv_error)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Cross-validation Error vs. K",
+       x = "K",
+       y = "Cross-validation Error")
+
+
+```
+
+```{r}
+
+
+prediction.KNN = class::knn(train_pca[,1:2],test_pca[,1:2],cl=train_pca[,3],k=3) 
+library(caret)
+test_pca$Star.type = as.factor(test_pca$Star.type)
+confusionMatrix(data=prediction.KNN,test_pca$Star.type)
+```
+```{r}
+
+# Generate confusion matrix
+confusion_matrix <- table(prediction.KNN, test$Star.type)
+
+# Convert the confusion matrix to a data frame
+conf_matrix_df <- as.data.frame(confusion_matrix)
+colnames(conf_matrix_df) <- c("Predicted", "Actual", "Frequency")
+# Create a heatmap for the confusion matrix
+ggplot(data = conf_matrix_df, aes(x = Predicted, y = Actual, fill = Frequency)) +
+  geom_tile(color = "white") +  # Adds white borders for tiles
+  scale_fill_gradient(low = "darksalmon", high = "darkorange4") +  # Color gradient
+  geom_text(aes(label = Frequency), color = "grey1", size = 4) +  # Add text labels
+  theme_minimal() +  # Minimal theme for a clean look
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis labels
+        axis.text.y = element_text(size = 10),  # Adjust y-axis label size
+        plot.title = element_text(hjust = 0.5),  # Center the title
+        panel.grid.major = element_blank(),  # Remove major grid lines
+        panel.grid.minor = element_blank()) +  # Remove minor grid lines
+  labs(title = "Confusion Matrix", x = "Predicted Class", y = "Actual Class", fill = "Frequency")  # Labels
+```
+
+TIME COMPARISON
+
+```{r}
+time_taken_rf_og <- microbenchmark(
+  rf_model <- randomForest(Star.type ~ ., data = train, mtry = 2, ntree = 200),
+  times = 10
+)
+
+time_taken_rf_pca <- microbenchmark(
+  rf_model <- randomForest(Star.type ~ ., data = train_pca, mtry = 2, ntree = 200),
+  times = 10
+
+)
+
+time_taken_tree_og <- microbenchmark(
+  tree.star = tree(Star.type~., data=train_df),
+  times = 10
+
+)
+
+
+time_taken_tree_pca <- microbenchmark(
+  tree.star = tree(Star.type~., data=train_pca),
+  times = 10
+
+)
+
+time_taken_knn_og <- microbenchmark(
+  prediction.KNN = class::knn(train[,2:5],test[,2:5],cl=train[,1],k=17) ,
+  times = 10
+
+)
+
+time_taken_knn_pca <- microbenchmark(
+  prediction.KNN = class::knn(train_pca[,1:2],test_pca[,1:2],cl=train_pca[,3],k=3),
+  times = 10
+
+)
+# Print the time taken
+print(time_taken_rf_og)
+print(time_taken_rf_pca)
+
+print(time_taken_tree_og)
+print(time_taken_tree_pca)
+
+print(time_taken_knn_og)
+print(time_taken_knn_pca)
+```
+```{r}
+library(microbenchmark)
+
+# Measure time taken to train the model with microbenchmark
+benchmark_result <- microbenchmark(
+  rf_model <- randomForest(Star.type ~ ., data = train, mtry = 2, ntree = 200),
+  times = 10
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
